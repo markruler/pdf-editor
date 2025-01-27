@@ -6,9 +6,11 @@ from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout,
 from PyQt6.QtGui import QIntValidator, QIcon
 from PyQt6.QtPdfWidgets import QPdfView
 from PyQt6.QtPdf import QPdfDocument
-from PyQt6.QtCore import QObject, Qt
+from PyQt6.QtCore import QObject, Qt, QTimer
 from pypdf import PdfReader, PdfWriter
 from pytesseract import pytesseract
+import pymupdf
+import os
 
 from config import configs
 from core import Worker
@@ -199,10 +201,19 @@ class App(QMainWindow):
 
         main_layout.addLayout(button_layout)
 
+        outline_layout = QHBoxLayout()
+        
         # Write outlines 버튼
         write_btn = QPushButton("Write outlines")
         write_btn.clicked.connect(self.write_outlines)
-        main_layout.addWidget(write_btn)
+        outline_layout.addWidget(write_btn)
+
+        # Copy outlines 버튼
+        copy_btn = QPushButton("Copy outlines from...")
+        copy_btn.clicked.connect(self.copy_outlines)
+        outline_layout.addWidget(copy_btn)
+
+        main_layout.addLayout(outline_layout)
 
     def _create_text_area(self, main_layout):
         self.text_widget = QTextEdit()
@@ -282,7 +293,181 @@ class App(QMainWindow):
         for line in lines:
             pdf_writer.add_outline_item(title=line, page_number=1)
 
-        output_path = f"{path.replace('.pdf', '')}.outline.pdf"
+        output_path = f"{path.replace('.pdf', '')}_created_outline.pdf"
         pdf_writer.write(output_path)
 
-        open_pdf(output_path) 
+        open_pdf(output_path)
+
+    def copy_outlines(self):
+        if not self.original_filename:
+            self.signals.update_message.emit("먼저 대상 PDF 파일을 열어주세요.")
+            return
+
+        # 아웃라인을 복사할 소스 PDF 파일 선택
+        source_filename, _ = QFileDialog.getOpenFileName(
+            self, "Select PDF with outlines", "", "PDF files (*.pdf);;All files (*.*)")
+        
+        if not source_filename:
+            return
+
+        try:
+            # PyMuPDF로 소스 PDF 열기
+            source_doc = pymupdf.open(source_filename)
+            print("\n=== PyMuPDF 문서 정보 ===")
+            print(f"총 페이지 수: {len(source_doc)}")
+            
+            # 소스 PDF의 아웃라인 읽기
+            source_pdf = PdfReader(source_filename)
+            outlines = source_pdf.outline
+            if not outlines:
+                self.signals.update_message.emit("선택한 PDF 파일에 아웃라인이 없습니다.")
+                source_doc.close()
+                return
+
+            # 대상 PDF 준비
+            target_pdf = PdfReader(self.original_filename)
+            pdf_writer = PdfWriter()
+
+            # 모든 페이지 복사
+            for page in target_pdf.pages:
+                pdf_writer.add_page(page)
+
+            # 아웃라인 복사
+            self._copy_outline_items(outlines, pdf_writer, source_doc)
+
+            # 최종 파일 경로 생성
+            output_dir = os.path.dirname(self.original_filename)
+            base_name = os.path.splitext(os.path.basename(self.original_filename))[0]
+            output_path = os.path.join(output_dir, f"{base_name}_copied_outline.pdf")
+
+            # 파일명 중복 확인 및 처리
+            i = 1
+            while os.path.exists(output_path):
+                output_path = os.path.join(output_dir, f"{base_name}_copied_outline_{i}.pdf")
+                i += 1
+
+            # 파일 저장
+            pdf_writer.write(output_path)
+            source_doc.close()
+
+            # PDF 뷰어에서 현재 파일 닫기
+            # self.pdf_document.close()
+
+            self.signals.update_message.emit("아웃라인이 성공적으로 복사되었습니다.")
+            
+            # 잠시 대기 후 새 파일 열기
+            QTimer.singleShot(100, lambda: open_pdf(output_path))
+
+        except Exception as e:
+            self.signals.update_message.emit(f"아웃라인 복사 중 오류가 발생했습니다: {str(e)}")
+            print(f"아웃라인 복사 중 오류가 발생했습니다: {str(e)}")
+
+    def _copy_outline_items(self, outlines, pdf_writer, source_doc, parent=None):
+        """재귀적으로 아웃라인 항목을 복사"""
+        if not outlines:
+            return
+
+        for item in outlines:
+            if isinstance(item, list):
+                # 하위 아웃라인이 있는 경우 재귀적으로 처리
+                self._copy_outline_items(item, pdf_writer, source_doc, current_parent)
+            else:
+                # 아웃라인 항목 추가
+                title = item.title
+                page_number = 0
+
+                # 디버깅을 위한 정보 출력
+                print(f"\n=== 아웃라인 항목: {title} ===")
+                print(f"item type: {type(item)}")
+                
+                if hasattr(item, 'page'):
+                    page_obj = item.page.get_object()
+                    print(f"page object: {page_obj}")
+                    
+                    # PyMuPDF로 페이지 번호 확인
+                    try:
+                        if hasattr(page_obj, 'indirect_reference'):
+                            page_ref = page_obj.indirect_reference
+                            page_xref = page_ref.idnum
+                            for page_num in range(len(source_doc)):
+                                if source_doc[page_num].xref == page_xref:
+                                    print(f"PyMuPDF page number: {page_num + 1}")
+                                    page_number = page_num
+                                    break
+                    except Exception as e:
+                        print(f"PyMuPDF page number error: {str(e)}")
+
+                # 현재 아웃라인 항목 추가
+                current_parent = pdf_writer.add_outline_item(
+                    title=title,
+                    page_number=page_number,
+                    parent=parent
+                )
+
+                # 하위 항목이 있는 경우 재귀적으로 처리
+                if isinstance(item, dict) and '/First' in item:
+                    self._process_child_items(item, pdf_writer, current_parent, source_doc)
+
+    def _process_child_items(self, parent_item, pdf_writer, outline_parent, source_doc):
+        """하위 아웃라인 항목을 처리"""
+        current = parent_item['/First'].get_object()
+        while current:
+            title = current.get('/Title', '')
+            page_number = 0
+
+            # 디버깅을 위한 정보 출력
+            print(f"\n=== 하위 아웃라인 항목: {title} ===")
+            print(f"current type: {type(current)}")
+
+            # 페이지 번호 추출 시도
+            try:
+                if '/D' in current:
+                    dest = current['/D']
+                    print(f"Destination object: {dest}")
+                    if isinstance(dest, list) and len(dest) > 0:
+                        page_ref = dest[0].get_object()
+                        print(f"Page object: {page_ref}")
+                        
+                        if hasattr(page_ref, 'indirect_reference'):
+                            ref = page_ref.indirect_reference
+                            page_xref = ref.idnum
+                            for page_num in range(len(source_doc)):
+                                if source_doc[page_num].xref == page_xref:
+                                    print(f"PyMuPDF page number: {page_num + 1}")
+                                    page_number = page_num
+                                    break
+                elif '/Dest' in current:
+                    dest = current['/Dest']
+                    print(f"Destination object: {dest}")
+                    if isinstance(dest, list) and len(dest) > 0:
+                        page_ref = dest[0].get_object()
+                        print(f"Page object: {page_ref}")
+                        
+                        if hasattr(page_ref, 'indirect_reference'):
+                            ref = page_ref.indirect_reference
+                            page_xref = ref.idnum
+                            for page_num in range(len(source_doc)):
+                                if source_doc[page_num].xref == page_xref:
+                                    print(f"PyMuPDF page number: {page_num + 1}")
+                                    page_number = page_num
+                                    break
+            except Exception as e:
+                print(f"Error extracting page number: {str(e)}")
+                page_number = 0
+
+            # 현재 아웃라인 항목 추가
+            current_outline = pdf_writer.add_outline_item(
+                title=title,
+                page_number=page_number,
+                parent=outline_parent
+            )
+
+            # 하위 항목이 있는 경우 재귀적으로 처리
+            if '/First' in current:
+                self._process_child_items(current, pdf_writer, current_outline, source_doc)
+
+            # 다음 형제 항목으로 이동
+            if '/Next' in current:
+                current = current['/Next'].get_object()
+            else:
+                break 
