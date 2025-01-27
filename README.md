@@ -4,7 +4,7 @@
 
 ## Dependencies
 
-- Google Tesseract OCR
+- Tesseract OCR
 - PyQt
 - PyMuPDF
 
