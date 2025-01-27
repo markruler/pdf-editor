@@ -1,5 +1,7 @@
 # PDF Editor
 
+![PDF Editor](misc/pdf-editor.png)
+
 ## Dependencies
 
 - Google Tesseract OCR
@@ -30,7 +32,7 @@ pip install -r requirements.txt
 ```
 
 ```shell
-pyinstaller --onefile --windowed --clean --add-data "assets/*;assets" --add-data "configs.toml;." --icon assets/icon.ico app.py
+make build
 ```
 
 - `--onefile` 실행 파일을 하나의 단일 파일로 패키징.
