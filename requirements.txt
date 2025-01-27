@@ -1,0 +1,10 @@
+# Extract images from PDF
+PyMuPDF==1.25.2
+
+# Wrapper for Tesseract OCR
+pytesseract==0.3.13
+
+# PIL
+pillow==11.1.0
+
+pypdf==5.2.0
