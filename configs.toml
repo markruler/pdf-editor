@@ -1,0 +1,6 @@
+[worker]
+max_workers = 2
+
+[tesseract]
+default_cmd_path = "C:\\Program Files\\Tesseract-OCR\\tesseract.exe"
+cmd_path = "" 

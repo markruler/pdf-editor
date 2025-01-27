@@ -1,3 +1,18 @@
+# Virtual Environment
 venv/
 .venv/
+
+# IDE
 .idea/
+
+# pyinstaller
+build/
+dist/
+installer.iss
+# pdf_editor.spec
+
+# Python
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
