@@ -103,9 +103,19 @@ class App(QMainWindow):
         main_layout.addWidget(self.message_label)
 
         # OCR 버튼
-        ocr_btn = QPushButton("Extract Text (OCR)")
-        ocr_btn.clicked.connect(self.start_read_thread)
-        main_layout.addWidget(ocr_btn)
+        ocr_layout = QHBoxLayout()
+        
+        self.ocr_btn = QPushButton("Extract Text (OCR)")
+        self.ocr_btn.clicked.connect(self.start_read_thread)
+        ocr_layout.addWidget(self.ocr_btn)
+
+        # Stop 버튼
+        self.stop_btn = QPushButton("Stop")
+        self.stop_btn.clicked.connect(self.stop_read_thread)
+        self.stop_btn.setEnabled(False)  # 초기에는 비활성화
+        ocr_layout.addWidget(self.stop_btn)
+
+        main_layout.addLayout(ocr_layout)
 
         # 버튼들
         self._create_buttons(main_layout)
@@ -266,8 +276,26 @@ class App(QMainWindow):
         self.worker = Worker(self.original_filename, first_page, last_page, self)
         self.worker.progress.connect(self.signals.update_text.emit)
         self.worker.error.connect(self.signals.update_message.emit)
-        self.worker.finished.connect(lambda: self.signals.update_message.emit("텍스트 추출이 완료되었습니다."))
+        self.worker.finished.connect(self.on_worker_finished)
         self.worker.start()
+
+        # 버튼 상태 변경
+        self.ocr_btn.setEnabled(False)
+        self.stop_btn.setEnabled(True)
+
+    def stop_read_thread(self):
+        if self.worker is not None and self.worker.isRunning():
+            self.worker.stop()
+            self.signals.update_message.emit("텍스트 추출이 중단되었습니다.")
+            # 버튼 상태 복원
+            self.ocr_btn.setEnabled(True)
+            self.stop_btn.setEnabled(False)
+
+    def on_worker_finished(self):
+        # 작업이 완료되면 버튼 상태 복원
+        self.ocr_btn.setEnabled(True)
+        self.stop_btn.setEnabled(False)
+        self.signals.update_message.emit("텍스트 추출이 완료되었습니다.")
 
     def undo(self):
         self.text_widget.undo()

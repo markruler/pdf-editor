@@ -1,17 +1,16 @@
-import io
+from PyQt6.QtCore import QThread, pyqtSignal
 from concurrent.futures import ThreadPoolExecutor
-
 import pymupdf
 from PIL import Image
-from PyQt6.QtCore import QThread, pyqtSignal
 from pytesseract import image_to_string
+import io
 
 from config import configs
 
 class Worker(QThread):
-    finished = pyqtSignal()
     progress = pyqtSignal(str)
     error = pyqtSignal(str)
+    finished = pyqtSignal()
 
     def __init__(self, filename, first_page, last_page, parent=None):
         super().__init__(parent)
@@ -19,6 +18,7 @@ class Worker(QThread):
         self.first_page = int(first_page)
         self.last_page = int(last_page)
         self.executor = ThreadPoolExecutor(max_workers=configs["worker"]["max_workers"])
+        self._stop = False
 
     def read_text(self, page_index: int, pdf_file: pymupdf.Document, lang: str):
         page = pdf_file[page_index - 1]
@@ -40,12 +40,31 @@ class Worker(QThread):
     def run(self):
         try:
             pdf_file = pymupdf.open(self.filename)
+            print(f"PDF 열기 성공: {self.filename}")
+            print(f"총 페이지 수: {len(pdf_file)}")
+            print(f"처리할 페이지 범위: {self.first_page} - {self.last_page}")
             
             for page_index in range(self.first_page, self.last_page + 1):
+                if self._stop:
+                    print("작업 중단 요청됨")
+                    break
+                
+                print(f"페이지 {page_index} 처리 중...")
                 content = self.read_text(page_index, pdf_file, "eng+kor")
                 if content:
-                    self.progress.emit(content)
+                    print(f"텍스트 추출 완료: {len(content)} 글자")
+                    self.progress.emit(f"=== Page {page_index} ===\n{content}\n")
             
-            self.finished.emit()
+            pdf_file.close()
+            if not self._stop:
+                print("모든 페이지 처리 완료")
+                self.finished.emit()
+
         except Exception as e:
-            self.error.emit(str(e)) 
+            print(f"오류 발생: {str(e)}")
+            self.error.emit(str(e))
+            self.finished.emit()
+
+    def stop(self):
+        print("작업 중단 요청")
+        self._stop = True
