@@ -1,6 +1,6 @@
 # PDF Editor
 
-![PDF Editor](misc/pdf-editor.png)
+![PDF Editor](images/pdf-editor.png)
 
 ## Dependencies
 
@@ -8,15 +8,15 @@
 - PyQt
 - PyMuPDF
 
-## Tesseract OCR 설치
+## Prerequisites
 
-- [tesseract](https://github.com/tesseract-ocr/tesseract)
+- [Tesseract OCR](https://github.com/tesseract-ocr/tesseract)
   - Windows 11의 기본 설치 경로는 `C:\Program Files\Tesseract-OCR`
 - [tessdata](https://github.com/tesseract-ocr/tessdata)는 다운로드 후 설치 경로의 `tessdata` 폴더에 복사
   - [kor](https://github.com/tesseract-ocr/tessdata/blob/main/kor.traineddata)
-  - [세로 kor](https://github.com/tesseract-ocr/tessdata/blob/main/kor_vert.traineddata)
+  - (Optional) [세로 kor](https://github.com/tesseract-ocr/tessdata/blob/main/kor_vert.traineddata): 필요한 경우 설치하고 `kor` 대신 `kor_vert` 언어 코드를 사용
 
-## Installation
+## Build on Windows 11
 
 ```shell
 # Virtual Environment 생성
