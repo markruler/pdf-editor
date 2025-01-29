@@ -2,7 +2,7 @@ from pathlib import Path
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, 
                            QHBoxLayout, QLabel, QLineEdit, QPushButton, 
                            QTextEdit, QFileDialog, QGroupBox, QSplitter,
-                           QStatusBar)
+                           QStatusBar, QProgressBar)
 from PyQt6.QtGui import QIntValidator, QIcon
 from PyQt6.QtPdfWidgets import QPdfView
 from PyQt6.QtPdf import QPdfDocument
@@ -13,9 +13,9 @@ import pymupdf
 import os
 
 from config import configs
-from core import Worker
 from utils.pdf import open_pdf
 from .signals import TextUpdateSignals
+from core import OCRWorker
 
 class App(QMainWindow):
     def __init__(self):
@@ -81,6 +81,11 @@ class App(QMainWindow):
         self.signals.clear_text.connect(self.text_widget.clear)
         
         self.worker = None
+
+        # 프로그레스바 추가
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setVisible(False)
+        self.statusBar.addPermanentWidget(self.progress_bar)
 
     def _create_widgets(self, main_layout):
         # Tesseract 설정 영역
@@ -259,13 +264,10 @@ class App(QMainWindow):
             self.signals.update_message.emit(f"페이지 번호는 1에서 {total_pages} 사이여야 합니다.")
             return
 
-        self.signals.update_message.emit(f"텍스트 추출 중... ({first_page} - {last_page} 페이지)")
-
-        tesseract_path = self.tesseract_path.text()
-        if tesseract_path:
-            pytesseract.tesseract_cmd = tesseract_path
-        else:
-            pytesseract.tesseract_cmd = configs["tesseract"]["default_cmd_path"]
+        # 프로그레스바 초기화 및 표시
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setValue(0)
+        self.statusBar.showMessage("OCR 텍스트 추출 중...")
         
         # 이전 worker가 있다면 정리
         if self.worker is not None and self.worker.isRunning():
@@ -273,10 +275,13 @@ class App(QMainWindow):
             self.worker.wait()
         
         # 새로운 worker 생성 및 시작
-        self.worker = Worker(self.original_filename, first_page, last_page, self)
+        tesseract_path = self.tesseract_path.text() or None
+        self.worker = OCRWorker(self.original_filename, first_page, last_page, tesseract_path)
         self.worker.progress.connect(self.signals.update_text.emit)
-        self.worker.error.connect(self.signals.update_message.emit)
-        self.worker.finished.connect(self.on_worker_finished)
+        self.worker.progress_percent.connect(self.progress_bar.setValue)
+        self.worker.status_message.connect(self.statusBar.showMessage)
+        self.worker.error.connect(self.on_ocr_error)
+        self.worker.finished.connect(self.on_ocr_complete)
         self.worker.start()
 
         # 버튼 상태 변경
@@ -286,16 +291,25 @@ class App(QMainWindow):
     def stop_read_thread(self):
         if self.worker is not None and self.worker.isRunning():
             self.worker.stop()
-            self.signals.update_message.emit("텍스트 추출이 중단되었습니다.")
+            self.progress_bar.setVisible(False)  # 프로그레스바 숨기기
+            self.statusBar.showMessage("텍스트 추출이 중단되었습니다.", 3000)  # 상태바 메시지 업데이트
             # 버튼 상태 복원
             self.ocr_btn.setEnabled(True)
             self.stop_btn.setEnabled(False)
 
-    def on_worker_finished(self):
-        # 작업이 완료되면 버튼 상태 복원
+    def on_ocr_complete(self):
+        self.progress_bar.setVisible(False)
+        self.statusBar.showMessage("OCR 텍스트 추출이 완료되었습니다.", 3000)
+        # 버튼 상태 복원
         self.ocr_btn.setEnabled(True)
         self.stop_btn.setEnabled(False)
-        self.signals.update_message.emit("텍스트 추출이 완료되었습니다.")
+
+    def on_ocr_error(self, error_message):
+        self.progress_bar.setVisible(False)
+        self.statusBar.showMessage(f"OCR 오류 발생: {error_message}", 5000)
+        # 버튼 상태 복원
+        self.ocr_btn.setEnabled(True)
+        self.stop_btn.setEnabled(False)
 
     def undo(self):
         self.text_widget.undo()

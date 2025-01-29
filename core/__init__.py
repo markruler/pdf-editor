@@ -1,3 +1,3 @@
-from .workers import Worker
+from .workers import OCRWorker
 
-__all__ = ['Worker'] 
+__all__ = ['OCRWorker'] 
